@@ -291,6 +291,18 @@ class Application:
         self.database.commit()
 
 
+    def gc(self):
+        file_ids = self.database.list_files(select_sync_metadata_only=False, select_sync_no=False)
+        files_dir = os.path.join(self.sync_dir, ".studip/files")
+
+        for id in file_ids:
+            abs_path = os.path.join(files_dir, id)
+            if os.path.isfile(abs_path):
+                # If this file is not referenced anywhere else
+                if os.lstat(abs_path).st_nlink == 1:
+                    os.unlink(abs_path)
+
+
     def show_usage(self, out):
         out.write(
             "Usage: {} <operation> <parameters>\n\n"
@@ -300,6 +312,7 @@ class Application:
             "    checkout      Checkout files into views\n"
             "    sync          <update>, then <fetch>, then <checkout>\n"
             "    clear-cache   Clear local course and file database\n"
+            "    gc            Remove fetched, but unreferenced files\n"
             "    view <...>    Show and modify views\n"
             "    help          Show this synopsis\n\n"
             "Commands for showing and modifying views:\n"
@@ -340,7 +353,7 @@ class Application:
         op = plain[0]
         plain = plain[1:]
 
-        if op in [ "update", "fetch", "checkout", "sync", "clear-cache" ]:
+        if op in [ "update", "fetch", "checkout", "sync", "clear-cache", "gc" ]:
             if len(plain) > 0:
                 return False
         elif op in [ "view" ]:
@@ -378,7 +391,7 @@ class Application:
 
         op = self.command_line["operation"]
 
-        if op in [ "update", "fetch", "checkout", "sync", "view" ]:
+        if op in [ "update", "fetch", "checkout", "sync", "view", "gc" ]:
             self.configure()
             with self.config:
                 self.open_database()
@@ -402,6 +415,8 @@ class Application:
                     self.checkout()
                 elif op == "view":
                     self.edit_views()
+                elif op == "gc":
+                    self.gc()
         elif op == "clear-cache":
             self.clear_cache()
         else: # op == "help"
