@@ -103,36 +103,64 @@ class Session:
             raise_fetch_error("overview page", e)
 
         try:
-            semester_list = parse_semester_list(overview_page)
+            semester_list = parse_semester_list(overview_page).semesters
         except ParserError:
             raise SessionError("Unable to parse overview page")
 
-        self.db.update_semester_list(semester_list.semesters)
+        syncmode_all = None
 
-        try:
-            remote_courses = parse_course_list(overview_page)
-        except ParserError:
-            raise SessionError("Unable to parse course list")
+        for semester in sorted(semester_list, key=lambda semester: semester.order):
+            syncmode_semester = None
 
-        remote_course_ids = [course.id for course in remote_courses]
+            url = self.studip_url("/studip/dispatch.php/my_courses/set_semester")
+            try:
+                overview_page = self.http.post(url, data={ "sem_select": semester.id}).text
+            except RequestException as e:
+                raise_fetch_error("overview page", e)
 
-        db_course_ids = self.db.list_courses()
-        new_courses = (course for course in remote_courses if course.id not in db_course_ids)
-        removed_course_ids = (id for id in db_course_ids if id not in remote_course_ids)
+            try:
+                semester_list = parse_semester_list(overview_page)
+            except ParserError:
+                raise SessionError("Unable to parse overview page")
 
-        for course_id in removed_course_ids:
-            course = self.db.get_course_details(course_id)
-            choice = prompt_choice("Delete data for removed course \"{}\"? ([Y]es, [n]o)".format(
-                    ellipsize(course.name, 50)), "yn", default="y")
-            if choice == "y":
-                self.db.delete_course(course)
+            self.db.update_semester_list(semester_list.semesters)
 
-        for course in new_courses:
-            sync = prompt_choice("Synchronize {} {}? ([Y]es, [n]o, [m]etadata only)".format(
-                    course.type, ellipsize(course.name, 40)), "ynm", default="y")
-            course.sync = { "y" : SyncMode.Full, "n" : SyncMode.NoSync, "m" : SyncMode.Metadata }[
-                    sync]
-            self.db.add_course(course)
+            try:
+                remote_courses = parse_course_list(overview_page)
+            except ParserError:
+                raise SessionError("Unable to parse course list")
+
+            remote_course_ids = [course.id for course in remote_courses]
+
+            db_course_ids = self.db.list_courses()
+            new_courses = (course for course in remote_courses if course.id not in db_course_ids)
+            removed_course_ids = (id for id in db_course_ids if id not in remote_course_ids)
+
+            for course in new_courses:
+                if syncmode_all:
+                    course.sync = syncmode_all
+                elif syncmode_semester:
+                    course.sync = syncmode_semester
+                else:
+                    sync = prompt_choice("Synchronize {} {} ({})? ([Y]es, [n]o, [m]etadata only, all in this [s]emester, [a]ll, [d]on't sync any from this semester, [q]uit checking right here)".format(
+                            course.type, ellipsize(course.name, 40), semester.name), "ynmsadq", default="y")
+                    if sync == 'a':
+                        syncmode_all = SyncMode.Full
+                    elif sync == 'q':
+                        syncmode_all = SyncMode.NoSync
+                        break
+                    elif sync == 's':
+                        syncmode_semester = SyncMode.Full
+                    elif sync == 'd':
+                        syncmode_semester = SyncMode.NoSync
+                        break
+                    else:
+                        course.sync = { "y" : SyncMode.Full, "n" : SyncMode.NoSync, "m" : SyncMode.Metadata }[
+                                sync]
+                self.db.add_course(course)
+
+            if syncmode_all == SyncMode.NoSync:
+                break
 
         sync_courses = self.db.list_courses(full=True, select_sync_no=False)
         last_course_synced = False
