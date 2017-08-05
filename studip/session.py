@@ -146,21 +146,20 @@ class Session:
                             course.type, ellipsize(course.name, 40), semester.name), "ynmsadq", default="y")
                     if sync == 'a':
                         syncmode_all = SyncMode.Full
+                        course.sync = syncmode_all
                     elif sync == 'q':
                         syncmode_all = SyncMode.NoSync
-                        break
+                        course.sync = syncmode_all
                     elif sync == 's':
                         syncmode_semester = SyncMode.Full
+                        course.sync = syncmode_semester
                     elif sync == 'd':
                         syncmode_semester = SyncMode.NoSync
-                        break
+                        course.sync = syncmode_semester
                     else:
                         course.sync = { "y" : SyncMode.Full, "n" : SyncMode.NoSync, "m" : SyncMode.Metadata }[
                                 sync]
                 self.db.add_course(course)
-
-            if syncmode_all == SyncMode.NoSync:
-                break
 
         sync_courses = self.db.list_courses(full=True, select_sync_no=False)
         last_course_synced = False
